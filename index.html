@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Business Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Firebase (free Spark plan) — database + built-in offline support -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.14.1/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.14.1/firebase-firestore-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.14.1/firebase-auth-compat.min.js"></script>
+<style>
+  .sync-banner{
+    position:fixed; top:0; left:0; right:0; z-index:100;
+    background:#C79A3E; color:#16241F; text-align:center; font-size:12.5px; font-weight:600;
+    padding:6px 10px; font-family:'Inter',sans-serif; display:none;
+  }
+  .sync-banner.show{ display:block; }
+  .setup-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+    font-family:'Inter',sans-serif; background:#16241F; color:#EFEEDE;
+  }
+  .setup-box{ max-width:480px; background:#1E332B; border-radius:10px; padding:28px; line-height:1.7; font-size:13.5px; }
+  .setup-box h2{ font-family:'Space Grotesk',sans-serif; color:#C79A3E; margin-top:0; }
+  .setup-box code{ background:#0d1614; padding:2px 6px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:12px; }
+
+  /* Auth screen */
+  .auth-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+    font-family:'Inter',sans-serif; background:#16241F;
+  }
+  .auth-box{
+    max-width:380px; width:100%; background:#F3EEE0; border-radius:12px; padding:32px 28px;
+  }
+  .auth-brand{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; color:#1C2B26; margin-bottom:2px; }
+  .auth-sub{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:#C79A3E; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:22px; }
+  .auth-field{ margin-bottom:14px; }
+  .auth-field label{ display:block; font-size:11px; font-weight:600; color:#6B6355; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:5px; }
+  .auth-field input{ width:100%; padding:10px 12px; border:1px solid #D3CDB4; border-radius:6px; font-family:'Inter',sans-serif; font-size:14px; background:#FBFAF4; }
+  .auth-btn{
+    width:100%; padding:11px; border-radius:6px; border:1px solid #1C2B26; background:#1C2B26; color:#FBFAF4;
+    font-weight:600; font-size:14px; cursor:pointer; font-family:'Inter',sans-serif; margin-top:6px;
+  }
+  .auth-btn:hover{ background:#0d1614; }
+  .auth-toggle{ text-align:center; margin-top:16px; font-size:12.5px; color:#6B6355; }
+  .auth-toggle a{ color:#C79A3E; font-weight:600; cursor:pointer; text-decoration:none; }
+  .auth-error{ background:#FBEFEA; border:1px solid #B23A2E; color:#7A2A20; border-radius:6px; padding:9px 12px; font-size:12.5px; margin-bottom:14px; }
+  .auth-forgot{ text-align:right; margin-top:-8px; margin-bottom:14px; }
+  .auth-forgot a{ font-size:11.5px; color:#6B6355; cursor:pointer; text-decoration:underline; }
+  .user-bar{
+    padding:12px 22px; border-top:1px solid rgba(255,255,255,0.08); margin-top:8px;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .user-email{ font-size:11px; color:rgba(255,255,255,0.55); font-family:'IBM Plex Mono',monospace; word-break:break-all; }
+  .logout-btn{
+    background:none;border:1px solid rgba(255,255,255,0.18);color:rgba(255,255,255,0.7);
+    font-size:11px;padding:7px 10px;border-radius:6px;cursor:pointer;width:100%;
+    font-family:'Inter',sans-serif;
+  }
+  .logout-btn:hover{ border-color:#C79A3E; color:#C79A3E; }
+
+  .pending-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+    font-family:'Inter',sans-serif; background:#16241F;
+  }
+  .pending-box{ max-width:420px; width:100%; background:#F3EEE0; border-radius:12px; padding:32px 28px; text-align:center; }
+  .pending-box .icon{ font-size:34px; margin-bottom:10px; }
+  .pending-box h2{ font-family:'Space Grotesk',sans-serif; color:#1C2B26; margin:0 0 10px 0; }
+  .pending-box p{ color:#6B6355; font-size:13.5px; line-height:1.7; margin:0 0 18px 0; }
+  .admin-pill{ display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+  .admin-pill.approved{ background:rgba(47,111,78,0.12); color:#2F6F4E; }
+  .admin-pill.pending{ background:rgba(178,58,46,0.12); color:#B23A2E; }
+  :root{
+    --cover:#16241F;
+    --cover-2:#1E332B;
+    --paper:#EFEEDE;
+    --paper-2:#E6E3D0;
+    --ink:#1C2B26;
+    --muted:#6B6355;
+    --gold:#C79A3E;
+    --gold-dark:#A67F2E;
+    --forest:#2F6F4E;
+    --brick:#B23A2E;
+    --line:#D3CDB4;
+    --white:#FBFAF4;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--cover);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+  }
+  .app{
+    display:flex;
+    min-height:100vh;
+  }
+  /* Sidebar styled as ledger binder tabs */
+  .sidebar{
+    width:220px;
+    flex-shrink:0;
+    background:linear-gradient(180deg,var(--cover) 0%, var(--cover-2) 100%);
+    padding:28px 0 20px 0;
+    display:flex;
+    flex-direction:column;
+    position:sticky;
+    top:0;
+    height:100vh;
+  }
+  .brand{
+    padding:0 22px 22px 22px;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+    margin-bottom:14px;
+  }
+  .brand-mark{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:20px;
+    color:var(--white);
+    letter-spacing:0.02em;
+  }
+  .brand-sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    color:var(--gold);
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    margin-top:4px;
+  }
+  .nav{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    flex:1;
+  }
+  .nav-item{
+    position:relative;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:12px 22px 12px 22px;
+    color:rgba(255,255,255,0.68);
+    font-size:13.5px;
+    font-weight:500;
+    cursor:pointer;
+    border:none;
+    background:transparent;
+    text-align:left;
+    font-family:'Inter',sans-serif;
+    transition:background .15s ease, color .15s ease;
+  }
+  .nav-item .tab-flag{
+    width:5px;
+    height:20px;
+    border-radius:2px;
+    flex-shrink:0;
+    opacity:0.55;
+  }
+  .nav-item:hover{ background:rgba(255,255,255,0.05); color:var(--white); }
+  .nav-item.active{
+    background:var(--paper);
+    color:var(--ink);
+    font-weight:600;
+  }
+  .nav-item.active .tab-flag{ opacity:1; }
+  .nav-count{
+    margin-left:auto;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    background:rgba(178,58,46,0.9);
+    color:white;
+    border-radius:10px;
+    padding:1px 7px;
+  }
+  .sidebar-foot{
+    padding:14px 22px 0 22px;
+    border-top:1px solid rgba(255,255,255,0.08);
+    margin-top:10px;
+  }
+  .reset-btn{
+    background:none;border:1px solid rgba(255,255,255,0.18);color:rgba(255,255,255,0.55);
+    font-size:11px;padding:7px 10px;border-radius:6px;cursor:pointer;width:100%;
+    font-family:'Inter',sans-serif;
+  }
+  .reset-btn:hover{ border-color:var(--brick); color:#ffb3a8; }
+
+  /* Main page */
+  .page{
+    flex:1;
+    background:var(--paper);
+    min-height:100vh;
+    padding:32px 40px 60px 40px;
+  }
+  .page-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:14px;
+    margin-bottom:26px;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .page-title{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:26px;
+    color:var(--ink);
+  }
+  .page-desc{
+    font-size:13px;
+    color:var(--muted);
+    margin-top:4px;
+  }
+  .btn{
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    padding:10px 18px;
+    border-radius:6px;
+    border:1px solid var(--ink);
+    background:var(--ink);
+    color:var(--white);
+    cursor:pointer;
+  }
+  .btn:hover{ background:#0d1614; }
+  .btn.secondary{ background:transparent; color:var(--ink); }
+  .btn.secondary:hover{ background:rgba(0,0,0,0.05); }
+  .btn.danger{ border-color:var(--brick); color:var(--brick); background:transparent; }
+  .btn.danger:hover{ background:rgba(178,58,46,0.08); }
+  .btn.small{ padding:5px 10px; font-size:12px; border-radius:4px; }
+
+  /* Cards */
+  .cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:14px;
+    margin-bottom:28px;
+  }
+  .card{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:16px 18px;
+    position:relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";
+    position:absolute; left:0; top:0; bottom:0; width:4px;
+    background:var(--gold);
+  }
+  .card.positive::before{ background:var(--forest); }
+  .card.negative::before{ background:var(--brick); }
+  .card-label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:var(--muted);
+    font-weight:600;
+  }
+  .card-value{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:24px;
+    font-weight:600;
+    margin-top:6px;
+    color:var(--ink);
+  }
+  .card-value.positive{ color:var(--forest); }
+  .card-value.negative{ color:var(--brick); }
+
+  .money{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; }
+
+  /* Filter bar */
+  .filterbar{
+    display:flex; gap:10px; align-items:center; margin-bottom:20px; flex-wrap:wrap;
+  }
+  select, input, textarea{
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    background:var(--white);
+    color:var(--ink);
+  }
+  label{ font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em; display:block; margin-bottom:4px; }
+
+  /* Table */
+  .table-wrap{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow:hidden;
+    margin-bottom:24px;
+  }
+  table{ width:100%; border-collapse:collapse; }
+  thead th{
+    text-align:left;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--muted);
+    font-weight:600;
+    padding:10px 14px;
+    border-bottom:2px solid var(--ink);
+    background:var(--paper-2);
+  }
+  tbody td{
+    padding:11px 14px;
+    font-size:13px;
+    border-bottom:1px solid var(--line);
+    color:var(--ink);
+  }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody tr:hover{ background:#F7F5EA; }
+  .num{ text-align:right; font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; }
+  .row-actions{ display:flex; gap:6px; }
+  .pill{
+    display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
+  }
+  .pill.low{ background:rgba(178,58,46,0.12); color:var(--brick); }
+  .pill.ok{ background:rgba(47,111,78,0.12); color:var(--forest); }
+  .empty{ padding:34px; text-align:center; color:var(--muted); font-size:13px; }
+
+  /* Chart bars */
+  .chart{ background:var(--white); border:1px solid var(--line); border-radius:8px; padding:20px; margin-bottom:24px; }
+  .chart-title{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; margin-bottom:16px; }
+  .bar-row{ display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  .bar-label{ width:38px; font-size:12px; font-weight:600; color:var(--muted); flex-shrink:0; }
+  .bar-track{ flex:1; background:var(--paper-2); border-radius:4px; height:22px; position:relative; overflow:hidden; }
+  .bar-fill{ height:100%; border-radius:4px; }
+  .bar-fill.sales{ background:var(--forest); }
+  .bar-fill.expenses{ background:var(--brick); }
+  .bar-value{ width:100px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12px; flex-shrink:0; }
+  .legend{ display:flex; gap:16px; margin-top:6px; font-size:11.5px; color:var(--muted); }
+  .legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .dot{ width:9px; height:9px; border-radius:2px; display:inline-block; }
+
+  .banner{
+    background:#FBEFEA; border:1px solid var(--brick); color:#7A2A20; border-radius:8px;
+    padding:12px 16px; font-size:13px; margin-bottom:22px; display:flex; align-items:center; gap:10px;
+  }
+
+  /* Modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(20,30,26,0.55);
+    display:none; align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .overlay.show{ display:flex; }
+  .modal{
+    background:var(--white); border-radius:10px; width:100%; max-width:480px;
+    max-height:88vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);
+  }
+  .modal-head{
+    padding:18px 22px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;
+  }
+  .modal-title{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:17px; }
+  .modal-close{ background:none; border:none; font-size:20px; cursor:pointer; color:var(--muted); line-height:1; }
+  .modal-body{ padding:20px 22px; display:flex; flex-direction:column; gap:14px; }
+  .modal-foot{ padding:16px 22px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:10px; }
+  .field{ display:flex; flex-direction:column; }
+  .field input, .field select, .field textarea{ width:100%; }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .hint{ font-size:11px; color:var(--muted); margin-top:3px; }
+
+  .section-note{
+    background:var(--white); border:1px dashed var(--line); border-radius:8px; padding:14px 16px;
+    font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.6;
+  }
+  .quarter-tag{
+    font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:12px;
+    background:var(--paper-2); padding:2px 8px; border-radius:4px;
+  }
+  @media(max-width:820px){
+    .app{ flex-direction:column; }
+    .sidebar{ width:100%; height:auto; position:relative; flex-direction:row; overflow-x:auto; padding:14px; }
+    .brand{ display:none; }
+    .nav{ flex-direction:row; }
+    .page{ padding:20px; }
+    .field-row{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="sync-banner" id="syncBanner">⚠ Offline — changes are saved on this device and will sync automatically once you're back online.</div>
+<div id="root"></div>
+<div class="overlay" id="overlay"><div class="modal" id="modalContent"></div></div>
+
+<script>
+/* =========================================================================
+   FIREBASE SETUP — paste your project's config below.
+   Get it from: Firebase Console > Project Settings > General > Your apps > SDK setup and configuration
+   ========================================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyAnsSxKVGoloQ3L6vwplp9ElGGK77K3SfY",
+  authDomain: "business-ledger-f9c92.firebaseapp.com",
+  projectId: "business-ledger-f9c92",
+  storageBucket: "business-ledger-f9c92.firebasestorage.app",
+  messagingSenderId: "739906976761",
+  appId: "1:739906976761:web:d0af091de48a8a5e97db28"
+};
+
+// This is YOU — the owner. Only this email can approve new sign-ups and see the Admin tab.
+// Change this if you signed up (or plan to sign up) with a different email.
+const ADMIN_EMAIL = "mjsamon01@gmail.com";
+
+let db = null;
+let auth = null;
+let currentUser = null;
+let firebaseReady = false;
+
+function isConfigFilled(){
+  return firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("PASTE_");
+}
+
+function showSetupScreen(){
+  document.getElementById('root').innerHTML = `
+    <div class="setup-screen"><div class="setup-box">
+      <h2>One more step ⚙️</h2>
+      <p>This app needs your Firebase project's connection details before it can save data.</p>
+      <p>Open <code>index.html</code> in a text/code editor, find <code>firebaseConfig</code> near the top of the script, and paste in the values from your Firebase Console (Project Settings → General → Your apps → SDK setup and configuration).</p>
+      <p>Save the file, re-upload to GitHub, and reload this page.</p>
+    </div></div>`;
+}
+
+function initFirebase(){
+  if(!isConfigFilled()){ showSetupScreen(); return false; }
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    auth = firebase.auth();
+    // Enables offline reads/writes: cached locally, auto-syncs when back online.
+    db.enablePersistence({synchronizeTabs:true}).catch(err=>{
+      console.warn('Offline persistence not enabled:', err.code);
+    });
+    firebaseReady = true;
+    return true;
+  }catch(e){
+    console.error('Firebase init failed', e);
+    showSetupScreen();
+    return false;
+  }
+}
+
+function updateSyncBanner(){
+  const banner = document.getElementById('syncBanner');
+  if(!banner) return;
+  if(navigator.onLine){ banner.classList.remove('show'); }
+  else{ banner.classList.add('show'); }
+}
+window.addEventListener('online', updateSyncBanner);
+window.addEventListener('offline', updateSyncBanner);
+
+/* ---------------- Auth screen ---------------- */
+let authMode = 'login'; // 'login' | 'signup'
+
+function renderAuthScreen(errorMsg){
+  document.getElementById('root').innerHTML = `
+    <div class="auth-screen"><div class="auth-box">
+      <div class="auth-brand">Ledger</div>
+      <div class="auth-sub">Business Tracker</div>
+      ${errorMsg?`<div class="auth-error">${errorMsg}</div>`:''}
+      <div class="auth-field"><label>Email</label><input id="auth-email" type="email" placeholder="you@example.com"></div>
+      <div class="auth-field"><label>Password</label><input id="auth-password" type="password" placeholder="••••••••"></div>
+      ${authMode==='login'?`<div class="auth-forgot"><a data-authaction="forgot">Forgot password?</a></div>`:''}
+      <button class="auth-btn" data-authaction="submit">${authMode==='login'?'Log In':'Create Account'}</button>
+      <div class="auth-toggle">
+        ${authMode==='login'
+          ? `Wala pang account? <a data-authaction="toggle">Sign up</a>`
+          : `May account ka na? <a data-authaction="toggle">Log in</a>`}
+      </div>
+    </div></div>
+  `;
+  document.querySelectorAll('[data-authaction]').forEach(el=>{
+    el.addEventListener('click', handleAuthAction);
+  });
+}
+
+async function handleAuthAction(e){
+  const action = e.currentTarget.getAttribute('data-authaction');
+  if(action==='toggle'){ authMode = authMode==='login' ? 'signup' : 'login'; renderAuthScreen(); return; }
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if(action==='forgot'){
+    if(!email){ renderAuthScreen('Type your email first, then tap "Forgot password?" again.'); return; }
+    try{ await auth.sendPasswordResetEmail(email); renderAuthScreen('Password reset email sent — check your inbox.'); }
+    catch(err){ renderAuthScreen(friendlyAuthError(err)); }
+    return;
+  }
+  if(action==='submit'){
+    if(!email || !password){ renderAuthScreen('Please fill in both email and password.'); return; }
+    try{
+      if(authMode==='login'){ await auth.signInWithEmailAndPassword(email, password); }
+      else{
+        const cred = await auth.createUserWithEmailAndPassword(email, password);
+        const isOwner = email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        await db.collection('users').doc(cred.user.uid).set({
+          email: email,
+          approved: isOwner, // the owner account is auto-approved; everyone else waits for approval
+          createdAt: Date.now()
+        });
+      }
+      // onAuthStateChanged will take it from here
+    }catch(err){ renderAuthScreen(friendlyAuthError(err)); }
+  }
+}
+
+function friendlyAuthError(err){
+  const map = {
+    'auth/invalid-email':'Invalid email address.',
+    'auth/user-not-found':'No account found with that email.',
+    'auth/wrong-password':'Incorrect password.',
+    'auth/invalid-credential':'Incorrect email or password.',
+    'auth/email-already-in-use':'That email already has an account — try logging in instead.',
+    'auth/weak-password':'Password should be at least 6 characters.',
+  };
+  return map[err.code] || (err.message || 'Something went wrong. Please try again.');
+}
+
+function renderPendingScreen(){
+  document.getElementById('root').innerHTML = `
+    <div class="pending-screen"><div class="pending-box">
+      <div class="icon">⏳</div>
+      <h2>Waiting for approval</h2>
+      <p>Nakita na namin ang sign-up mo (<strong>${currentUser.email}</strong>), pero kailangan pa itong i-approve ng may-ari ng ledger na ito bago ka makapasok. Sabihan mo lang siya na nag-sign up ka na.</p>
+      <button class="auth-btn" data-action="logout" style="max-width:220px;margin:0 auto;">Log out</button>
+    </div></div>
+  `;
+  document.querySelector('[data-action="logout"]').addEventListener('click', ()=>{ logout(); });
+}
+
+async function checkApprovalAndLoad(){
+  try{
+    const snap = await db.collection('users').doc(currentUser.uid).get();
+    let profile = snap.exists ? snap.data() : null;
+    const isOwner = currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    if(!profile){
+      // Profile missing (e.g. account existed before this feature) — create it now.
+      profile = { email: currentUser.email, approved: isOwner, createdAt: Date.now() };
+      await db.collection('users').doc(currentUser.uid).set(profile);
+    }
+    if(profile.approved){
+      state.isAdmin = isOwner;
+      loadUserData();
+    }else{
+      renderPendingScreen();
+    }
+  }catch(e){
+    console.error('approval check failed', e);
+    renderPendingScreen();
+  }
+}
+
+async function logout(){
+  await auth.signOut();
+}
+
+/* ---------------- Storage helpers (Firestore-backed, offline-capable, per-user) ---------------- */
+const DOC_COLLECTION = 'ledger-data'; // one document per data key, e.g. products, orders...
+
+function userDoc(key){
+  return db.collection('users').doc(currentUser.uid).collection(DOC_COLLECTION).doc(key);
+}
+
+async function loadKey(key, fallback){
+  try{
+    const snap = await userDoc(key).get();
+    if(snap.exists && snap.data() && typeof snap.data().value === 'string'){
+      return JSON.parse(snap.data().value);
+    }
+    return fallback;
+  }catch(e){ console.error('load failed', key, e); return fallback; }
+}
+async function saveKey(key, value){
+  try{
+    await userDoc(key).set({
+      value: JSON.stringify(value),
+      updatedAt: Date.now()
+    });
+  }catch(e){ console.error('storage save failed', key, e); }
+}
+
+/* ---------------- State ---------------- */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const today = () => new Date().toISOString().slice(0,10);
+
+let state = {
+  ready:false,
+  tab:'dashboard',
+  products:[],
+  orders:[],
+  expenses:[],
+  adjustments:[],
+  tax:{ rate:0.03, exempt:{}, vat8:false },
+  filterYear:new Date().getFullYear(),
+  filterQuarter:'ALL',
+  offeringPct:0.10,
+  isAdmin:false
+};
+
+const PLATFORMS=['Shopee','TikTok Shop','Lazada','Facebook','Instagram','Walk-in','Other'];
+const EXPENSE_CATS=['Packaging','Shipping','Marketing','Rent','Utilities','Supplies/Materials','Salaries','Taxes & Fees','Other'];
+
+function peso(n){
+  const v = Number(n)||0;
+  const s = v.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+  return (v<0? '-₱'+s.replace('-',''): '₱'+s);
+}
+function quarterOf(dateStr){
+  const d=new Date(dateStr+'T00:00:00');
+  const m=d.getMonth()+1;
+  const q= m<=3?1:m<=6?2:m<=9?3:4;
+  return {year:d.getFullYear(), q};
+}
+function qKey(year,q){ return year+'-Q'+q; }
+
+function currentStock(productId){
+  const p = state.products.find(x=>x.id===productId);
+  if(!p) return 0;
+  let stock = Number(p.openingStock)||0;
+  state.adjustments.filter(a=>a.productId===productId).forEach(a=>{
+    stock += a.type==='in' ? Number(a.qty) : -Number(a.qty);
+  });
+  state.orders.filter(o=>o.productId===productId).forEach(o=>{ stock -= Number(o.qty); });
+  return stock;
+}
+
+function availableYears(){
+  const ys = new Set([new Date().getFullYear()]);
+  state.orders.forEach(o=>ys.add(quarterOf(o.date).year));
+  state.expenses.forEach(e=>ys.add(quarterOf(e.date).year));
+  return Array.from(ys).sort((a,b)=>b-a);
+}
+
+function ordersInScope(year,q){
+  return state.orders.filter(o=>{
+    const qq=quarterOf(o.date);
+    return qq.year===year && (q==='ALL' || qq.q===q);
+  });
+}
+function expensesInScope(year,q){
+  return state.expenses.filter(e=>{
+    const qq=quarterOf(e.date);
+    return qq.year===year && (q==='ALL' || qq.q===q);
+  });
+}
+
+/* ---------------- Render root ---------------- */
+function render(){
+  const root=document.getElementById('root');
+  if(!state.ready){
+    root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#EFEEDE;font-family:Inter,sans-serif;">Loading your ledger…</div>';
+    return;
+  }
+  const lowStock = state.products.filter(p=>currentStock(p.id) <= Number(p.lowStockAlert||0));
+  root.innerHTML = `
+    <div class="app">
+      ${renderSidebar(lowStock.length)}
+      <div class="page">${renderPage(lowStock)}</div>
+    </div>
+  `;
+}
+
+function navItem(id,label,color,count){
+  const active = state.tab===id ? 'active':'';
+  return `<button class="nav-item ${active}" data-action="nav" data-tab="${id}">
+    <span class="tab-flag" style="background:${color}"></span>
+    ${label}
+    ${count?`<span class="nav-count">${count}</span>`:''}
+  </button>`;
+}
+
+function renderSidebar(lowCount){
+  return `
+  <div class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">Ledger</div>
+      <div class="brand-sub">Business Tracker</div>
+    </div>
+    <div class="nav">
+      ${navItem('dashboard','Dashboard','#C79A3E')}
+      ${navItem('sales','Sales / Orders','#2F6F4E')}
+      ${navItem('products','Products / Offerings','#C79A3E')}
+      ${navItem('expenses','Expenses','#B23A2E')}
+      ${navItem('inventory','Inventory','#3E6B8A', lowCount>0?lowCount:0)}
+      ${navItem('tax','Quarterly Tax','#5B4B8A')}
+      ${state.isAdmin? navItem('admin','Admin — Approve Users','#B23A2E') : ''}
+    </div>
+    <div class="user-bar">
+      <div class="user-email">${currentUser ? currentUser.email : ''}</div>
+      <button class="logout-btn" data-action="logout">Log out</button>
+    </div>
+    <div class="sidebar-foot">
+      <button class="reset-btn" data-action="reset-all">Reset all data</button>
+    </div>
+  </div>`;
+}
+
+function renderPage(lowStock){
+  switch(state.tab){
+    case 'dashboard': return renderDashboard(lowStock);
+    case 'sales': return renderSales();
+    case 'products': return renderProducts();
+    case 'expenses': return renderExpenses();
+    case 'inventory': return renderInventory(lowStock);
+    case 'tax': return renderTax();
+    case 'admin': return renderAdmin();
+    default: return '';
+  }
+}
+
+/* ---------------- Dashboard ---------------- */
+function renderDashboard(lowStock){
+  const years = availableYears();
+  const y = state.filterYear;
+  const q = state.filterQuarter;
+  const ords = ordersInScope(y,q);
+  const exps = expensesInScope(y,q);
+  const totalSales = ords.reduce((s,o)=>s+Number(o.qty)*Number(o.unitPrice),0);
+  const totalCost = ords.reduce((s,o)=>s+Number(o.qty)*Number(o.unitCost),0);
+  const grossProfit = totalSales-totalCost;
+  const totalExpenses = exps.reduce((s,e)=>s+Number(e.amount),0);
+  const netProfit = grossProfit-totalExpenses;
+  const offering = Math.max(0,netProfit) * Number(state.offeringPct);
+
+  const quarters=[1,2,3,4];
+  const qData = quarters.map(qq=>{
+    const qo = ordersInScope(y,qq);
+    const qe = expensesInScope(y,qq);
+    return { q:qq, sales:qo.reduce((s,o)=>s+Number(o.qty)*Number(o.unitPrice),0), expenses:qe.reduce((s,e)=>s+Number(e.amount),0) };
+  });
+  const maxVal = Math.max(1,...qData.map(d=>Math.max(d.sales,d.expenses)));
+
+  const recent = [...state.orders].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+
+  return `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Dashboard</div>
+        <div class="page-desc">Kita, gastos, at kalusugan ng negosyo sa isang tingin.</div>
+      </div>
+      <div class="filterbar">
+        <div class="field"><label>Year</label>
+          <select data-action="filter-year">${years.map(yy=>`<option value="${yy}" ${yy===y?'selected':''}>${yy}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Quarter</label>
+          <select data-action="filter-quarter">
+            <option value="ALL" ${q==='ALL'?'selected':''}>Full Year</option>
+            <option value="1" ${q==1?'selected':''}>Q1 (Jan–Mar)</option>
+            <option value="2" ${q==2?'selected':''}>Q2 (Apr–Jun)</option>
+            <option value="3" ${q==3?'selected':''}>Q3 (Jul–Sep)</option>
+            <option value="4" ${q==4?'selected':''}>Q4 (Oct–Dec)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    ${lowStock.length>0?`<div class="banner">⚠ ${lowStock.length} product${lowStock.length>1?'s are':' is'} at or below its low-stock alert level — check the Inventory tab.</div>`:''}
+
+    <div class="cards">
+      <div class="card"><div class="card-label">Total Sales</div><div class="card-value money">${peso(totalSales)}</div></div>
+      <div class="card"><div class="card-label">Total Cost of Goods</div><div class="card-value money">${peso(totalCost)}</div></div>
+      <div class="card ${grossProfit>=0?'positive':'negative'}"><div class="card-label">Gross Profit</div><div class="card-value money ${grossProfit>=0?'positive':'negative'}">${peso(grossProfit)}</div></div>
+      <div class="card"><div class="card-label">Total Expenses</div><div class="card-value money">${peso(totalExpenses)}</div></div>
+      <div class="card ${netProfit>=0?'positive':'negative'}"><div class="card-label">Net Profit</div><div class="card-value money ${netProfit>=0?'positive':'negative'}">${peso(netProfit)}</div></div>
+      <div class="card" style="border-color:var(--gold)">
+        <div class="card-label">Offering
+          <input type="number" min="0" max="100" step="1" value="${(state.offeringPct*100).toFixed(0)}" data-action="offering-pct"
+            style="width:44px; padding:1px 4px; font-size:11px; margin-left:4px;">%
+        </div>
+        <div class="card-value money" style="color:var(--gold-dark)">${peso(offering)}</div>
+      </div>
+    </div>
+    <div class="section-note" style="margin-top:-14px; margin-bottom:24px;">Offering is computed as <strong>${(state.offeringPct*100).toFixed(0)}% of Net Profit</strong> — actual income only, after all cost of goods and expenses are deducted. Edit the % above anytime.</div>
+
+    <div class="chart">
+      <div class="chart-title">Sales vs. Expenses by Quarter — ${y}</div>
+      ${qData.map(d=>`
+        <div class="bar-row">
+          <div class="bar-label">Q${d.q}</div>
+          <div style="flex:1;">
+            <div class="bar-track" style="margin-bottom:4px;"><div class="bar-fill sales" style="width:${(d.sales/maxVal*100).toFixed(1)}%"></div></div>
+            <div class="bar-track"><div class="bar-fill expenses" style="width:${(d.expenses/maxVal*100).toFixed(1)}%"></div></div>
+          </div>
+          <div class="bar-value money">${peso(d.sales)}<br><span style="color:var(--brick)">${peso(d.expenses)}</span></div>
+        </div>`).join('')}
+      <div class="legend"><span><i class="dot" style="background:var(--forest)"></i>Sales</span><span><i class="dot" style="background:var(--brick)"></i>Expenses</span></div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Customer</th><th>Product</th><th>Platform</th><th style="text-align:right">Sale</th><th style="text-align:right">Profit</th></tr></thead>
+        <tbody>
+          ${recent.length===0? `<tr><td colspan="6" class="empty">No sales recorded yet. Add your first order in the Sales tab.</td></tr>` :
+          recent.map(o=>{
+            const p=state.products.find(x=>x.id===o.productId);
+            const sale=Number(o.qty)*Number(o.unitPrice);
+            const profit=sale-Number(o.qty)*Number(o.unitCost);
+            return `<tr><td>${o.date}</td><td>${o.customer||'—'}</td><td>${p?p.name:'—'}</td><td>${o.platform}</td><td class="num">${peso(sale)}</td><td class="num" style="color:${profit>=0?'var(--forest)':'var(--brick)'}">${peso(profit)}</td></tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ---------------- Sales ---------------- */
+function renderSales(){
+  const rows=[...state.orders].sort((a,b)=>b.date.localeCompare(a.date));
+  return `
+    <div class="page-header">
+      <div><div class="page-title">Sales / Orders</div><div class="page-desc">Bawat benta dito, automatic na nababawas sa stock.</div></div>
+      <button class="btn" data-action="add-order">+ Add Sale</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Order</th><th>Customer</th><th>Product</th><th>Platform</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total Sale</th><th style="text-align:right">Profit</th><th></th></tr></thead>
+        <tbody>
+        ${rows.length===0?`<tr><td colspan="10" class="empty">No orders yet. Click “+ Add Sale” to log your first order.</td></tr>`:
+        rows.map(o=>{
+          const p=state.products.find(x=>x.id===o.productId);
+          const sale=Number(o.qty)*Number(o.unitPrice);
+          const cost=Number(o.qty)*Number(o.unitCost);
+          const profit=sale-cost;
+          return `<tr>
+            <td>${o.date}</td><td class="money">${o.orderNo||'—'}</td><td>${o.customer||'—'}</td>
+            <td>${p?p.name:'<em>(deleted product)</em>'}</td><td>${o.platform}</td>
+            <td class="num">${o.qty}</td><td class="num">${peso(o.unitPrice)}</td>
+            <td class="num">${peso(sale)}</td>
+            <td class="num" style="color:${profit>=0?'var(--forest)':'var(--brick)'}">${peso(profit)}</td>
+            <td><div class="row-actions">
+              <button class="btn small secondary" data-action="edit-order" data-id="${o.id}">Edit</button>
+              <button class="btn small danger" data-action="delete-order" data-id="${o.id}">Del</button>
+            </div></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ---------------- Products ---------------- */
+function renderProducts(){
+  const rows=[...state.products].sort((a,b)=>a.name.localeCompare(b.name));
+  return `
+    <div class="page-header">
+      <div><div class="page-title">Products / Offerings</div><div class="page-desc">Ito ang mga paninda o serbisyo mong inaalok.</div></div>
+      <button class="btn" data-action="add-product">+ Add Product</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Category</th><th>Supplier</th><th style="text-align:right">Base Cost</th><th style="text-align:right">Selling Price</th><th style="text-align:right">Margin</th><th style="text-align:right">Stock</th><th></th></tr></thead>
+        <tbody>
+        ${rows.length===0?`<tr><td colspan="8" class="empty">No products yet. Add what you sell to start tracking sales and stock.</td></tr>`:
+        rows.map(p=>{
+          const stock=currentStock(p.id);
+          const low = stock<=Number(p.lowStockAlert||0);
+          const margin = Number(p.sellingPrice)-Number(p.baseCost);
+          return `<tr>
+            <td>${p.name}</td><td>${p.category||'—'}</td><td>${p.supplier||'—'}</td>
+            <td class="num">${peso(p.baseCost)}</td><td class="num">${peso(p.sellingPrice)}</td>
+            <td class="num" style="color:${margin>=0?'var(--forest)':'var(--brick)'}">${peso(margin)}</td>
+            <td class="num">${stock} <span class="pill ${low?'low':'ok'}">${low?'Low':'OK'}</span></td>
+            <td><div class="row-actions">
+              <button class="btn small secondary" data-action="edit-product" data-id="${p.id}">Edit</button>
+              <button class="btn small danger" data-action="delete-product" data-id="${p.id}">Del</button>
+            </div></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ---------------- Expenses ---------------- */
+function renderExpenses(){
+  const rows=[...state.expenses].sort((a,b)=>b.date.localeCompare(a.date));
+  const total = rows.reduce((s,e)=>s+Number(e.amount),0);
+  return `
+    <div class="page-header">
+      <div><div class="page-title">Expenses</div><div class="page-desc">Lahat ng lumalabas na pera para patakbuhin ang negosyo.</div></div>
+      <button class="btn" data-action="add-expense">+ Add Expense</button>
+    </div>
+    <div class="cards" style="grid-template-columns:220px;">
+      <div class="card negative"><div class="card-label">Total Expenses Logged</div><div class="card-value money negative">${peso(total)}</div></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Category</th><th>Description</th><th style="text-align:right">Amount</th><th></th></tr></thead>
+        <tbody>
+        ${rows.length===0?`<tr><td colspan="5" class="empty">No expenses yet. Add costs like packaging, shipping, or rent.</td></tr>`:
+        rows.map(e=>`<tr>
+          <td>${e.date}</td><td>${e.category}</td><td>${e.description||'—'}</td>
+          <td class="num">${peso(e.amount)}</td>
+          <td><div class="row-actions">
+            <button class="btn small secondary" data-action="edit-expense" data-id="${e.id}">Edit</button>
+            <button class="btn small danger" data-action="delete-expense" data-id="${e.id}">Del</button>
+          </div></td>
+        </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ---------------- Inventory ---------------- */
+function renderInventory(lowStock){
+  const rows=[...state.products].sort((a,b)=>a.name.localeCompare(b.name));
+  const adj=[...state.adjustments].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15);
+  return `
+    <div class="page-header">
+      <div><div class="page-title">Inventory</div><div class="page-desc">Kasalukuyang stock at manual na pag-adjust (restock, damage, loss).</div></div>
+      <button class="btn" data-action="add-adjustment">+ Stock Adjustment</button>
+    </div>
+    ${lowStock.length>0?`<div class="banner">⚠ Low stock: ${lowStock.map(p=>p.name).join(', ')}</div>`:''}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Product</th><th style="text-align:right">Opening Stock</th><th style="text-align:right">Sold</th><th style="text-align:right">Adjusted</th><th style="text-align:right">Current Stock</th><th style="text-align:right">Low Stock Alert</th><th>Status</th></tr></thead>
+        <tbody>
+        ${rows.length===0?`<tr><td colspan="7" class="empty">Add products first — inventory is tracked per product.</td></tr>`:
+        rows.map(p=>{
+          const sold = state.orders.filter(o=>o.productId===p.id).reduce((s,o)=>s+Number(o.qty),0);
+          const adjNet = state.adjustments.filter(a=>a.productId===p.id).reduce((s,a)=>s+(a.type==='in'?Number(a.qty):-Number(a.qty)),0);
+          const stock = currentStock(p.id);
+          const low = stock<=Number(p.lowStockAlert||0);
+          return `<tr>
+            <td>${p.name}</td><td class="num">${p.openingStock}</td><td class="num">-${sold}</td>
+            <td class="num">${adjNet>=0?'+':''}${adjNet}</td><td class="num"><strong>${stock}</strong></td>
+            <td class="num">${p.lowStockAlert}</td><td><span class="pill ${low?'low':'ok'}">${low?'Low Stock':'OK'}</span></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="chart-title" style="margin-bottom:10px;">Recent Stock Adjustments</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Product</th><th>Type</th><th style="text-align:right">Qty</th><th>Note</th><th></th></tr></thead>
+        <tbody>
+        ${adj.length===0?`<tr><td colspan="6" class="empty">No manual adjustments yet.</td></tr>`:
+        adj.map(a=>{
+          const p=state.products.find(x=>x.id===a.productId);
+          return `<tr>
+            <td>${a.date}</td><td>${p?p.name:'—'}</td><td>${a.type==='in'?'Stock In':'Stock Out'}</td>
+            <td class="num">${a.qty}</td><td>${a.note||'—'}</td>
+            <td><button class="btn small danger" data-action="delete-adjustment" data-id="${a.id}">Del</button></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ---------------- Tax ---------------- */
+function renderTax(){
+  const years = availableYears();
+  const y = state.filterYear;
+  const quarters=[1,2,3,4];
+  const rate = Number(state.tax.rate);
+  let annualTaxable=0, annualDue=0, annualGross=0;
+  const rowsHtml = quarters.map(q=>{
+    const key=qKey(y,q);
+    const ords=ordersInScope(y,q);
+    const gross = ords.reduce((s,o)=>s+Number(o.qty)*Number(o.unitPrice),0);
+    const exempt = Number(state.tax.exempt[key]||0);
+    const taxable = Math.max(0, gross-exempt);
+    const due = taxable*rate;
+    annualGross+=gross; annualTaxable+=taxable; annualDue+=due;
+    const periods=['Jan–Mar','Apr–Jun','Jul–Sep','Oct–Dec'];
+    return `<tr>
+      <td><span class="quarter-tag">Q${q}</span></td><td>${periods[q-1]}</td>
+      <td class="num">${peso(gross)}</td>
+      <td class="num"><input type="number" min="0" step="0.01" style="width:100px;text-align:right" value="${exempt}" data-action="exempt-input" data-key="${key}"></td>
+      <td class="num">${peso(taxable)}</td>
+      <td class="num">${(rate*100).toFixed(1)}%</td>
+      <td class="num"><strong>${peso(due)}</strong></td>
+      <td>BIR Form 2551Q</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="page-header">
+      <div><div class="page-title">Quarterly Tax Summary</div><div class="page-desc">Percentage Tax (2551Q) estimate based sa iyong logged sales.</div></div>
+      <div class="filterbar">
+        <div class="field"><label>Year</label>
+          <select data-action="filter-year">${years.map(yy=>`<option value="${yy}" ${yy===y?'selected':''}>${yy}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Tax Rate</label>
+          <select data-action="tax-rate">
+            <option value="0.03" ${rate===0.03?'selected':''}>3% (Percentage Tax)</option>
+            <option value="0.01" ${rate===0.01?'selected':''}>1% (reduced rate)</option>
+            <option value="0.08" ${rate===0.08?'selected':''}>8% (8% IT Option)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Quarter</th><th>Period</th><th style="text-align:right">Gross Sales</th><th style="text-align:right">Less: Exempt Sales</th><th style="text-align:right">Taxable Gross Sales</th><th style="text-align:right">Rate</th><th style="text-align:right">Tax Due</th><th>Notes</th></tr></thead>
+        <tbody>
+          ${rowsHtml}
+          <tr style="background:var(--paper-2); font-weight:600;">
+            <td colspan="2">Annual Summary — ${y}</td>
+            <td class="num">${peso(annualGross)}</td><td></td>
+            <td class="num">${peso(annualTaxable)}</td><td></td>
+            <td class="num">${peso(annualDue)}</td><td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-note">
+      <strong>Based on a Non-VAT / Percentage Tax (2551Q) setup.</strong><br>
+      • Exempt sales per quarter are editable above — type directly in the field.<br>
+      • Taxable Gross Sales = Gross Sales − Exempt Sales. Tax Due = Taxable Gross Sales × rate.<br>
+      • This is an organizer, not tax advice — confirm final filing amounts against your BIR Certificate of Registration and current BIR rules before you file.
+    </div>
+  `;
+}
+
+/* ---------------- Admin ---------------- */
+let adminUsers = [];
+async function loadAdminUsers(){
+  try{
+    const snap = await db.collection('users').get();
+    adminUsers = snap.docs.map(d=>({ uid:d.id, ...d.data() }))
+      .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  }catch(e){ console.error('failed to load users', e); adminUsers = []; }
+  render();
+}
+
+function renderAdmin(){
+  return `
+    <div class="page-header">
+      <div><div class="page-title">Admin — Approve Users</div><div class="page-desc">Ikaw lang ang nakakakita nito. I-approve ang mga bagong nag-sign up bago sila makapasok.</div></div>
+      <button class="btn secondary" data-action="admin-refresh">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Email</th><th>Signed up</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        ${adminUsers.length===0? `<tr><td colspan="4" class="empty">Loading, or no users yet — tap Refresh.</td></tr>` :
+        adminUsers.map(u=>{
+          const isSelf = u.email && u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase();
+          const dt = u.createdAt ? new Date(u.createdAt).toISOString().slice(0,10) : '—';
+          return `<tr>
+            <td>${u.email||'—'}${isSelf?' <span class="admin-pill approved">You (owner)</span>':''}</td>
+            <td>${dt}</td>
+            <td><span class="admin-pill ${u.approved?'approved':'pending'}">${u.approved?'Approved':'Pending'}</span></td>
+            <td>
+              ${isSelf?'':`
+                ${u.approved
+                  ? `<button class="btn small danger" data-action="admin-revoke" data-id="${u.uid}">Revoke</button>`
+                  : `<button class="btn small" data-action="admin-approve" data-id="${u.uid}">Approve</button>`}
+              `}
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="section-note">Bagong nag-sign up ay hindi makakapasok hangga't hindi mo pina-"Approve" dito. Pwede mo ring "Revoke" ang access ng sinuman anumang oras.</div>
+  `;
+}
+function openModal(html){
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('overlay').classList.add('show');
+}
+function closeModal(){
+  document.getElementById('overlay').classList.remove('show');
+  document.getElementById('modalContent').innerHTML='';
+}
+
+function productOptions(selectedId){
+  return state.products.map(p=>`<option value="${p.id}" ${p.id===selectedId?'selected':''}>${p.name}</option>`).join('');
+}
+
+function modalProductForm(existing){
+  const p = existing || {name:'',category:'',supplier:'',baseCost:'',sellingPrice:'',openingStock:0,lowStockAlert:5};
+  return `
+    <div class="modal-head"><div class="modal-title">${existing?'Edit':'Add'} Product</div><button class="modal-close" data-action="close-modal">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Product Name</label><input id="f-name" value="${p.name}" placeholder="e.g. Black Shirt"></div>
+      <div class="field-row">
+        <div class="field"><label>Category</label><input id="f-category" value="${p.category}" placeholder="e.g. Apparel"></div>
+        <div class="field"><label>Supplier</label><input id="f-supplier" value="${p.supplier}" placeholder="e.g. ABC Supplier"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Base Cost (₱)</label><input id="f-cost" type="number" step="0.01" min="0" value="${p.baseCost}"></div>
+        <div class="field"><label>Selling Price (₱)</label><input id="f-price" type="number" step="0.01" min="0" value="${p.sellingPrice}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Opening Stock</label><input id="f-stock" type="number" min="0" value="${p.openingStock}" ${existing?'':''}></div>
+        <div class="field"><label>Low Stock Alert</label><input id="f-lowalert" type="number" min="0" value="${p.lowStockAlert}"></div>
+      </div>
+      ${existing?'<div class="hint">Opening stock is your starting count; actual current stock also factors in sales and adjustments.</div>':''}
+    </div>
+    <div class="modal-foot">
+      <button class="btn secondary" data-action="close-modal">Cancel</button>
+      <button class="btn" data-action="save-product" data-id="${existing?existing.id:''}">Save Product</button>
+    </div>
+  `;
+}
+
+function modalOrderForm(existing){
+  const o = existing || {date:today(),customer:'',productId:state.products[0]?state.products[0].id:'',qty:1,unitPrice:'',unitCost:'',platform:'Shopee',orderNo:''};
+  const selectedProduct = state.products.find(p=>p.id===o.productId);
+  return `
+    <div class="modal-head"><div class="modal-title">${existing?'Edit':'Add'} Sale</div><button class="modal-close" data-action="close-modal">×</button></div>
+    <div class="modal-body">
+      ${state.products.length===0?'<div class="hint">Add a product first in the Products tab.</div>':''}
+      <div class="field-row">
+        <div class="field"><label>Date</label><input id="f-date" type="date" value="${o.date}"></div>
+        <div class="field"><label>Order No.</label><input id="f-orderno" value="${o.orderNo||''}" placeholder="ORD-001"></div>
+      </div>
+      <div class="field"><label>Customer</label><input id="f-customer" value="${o.customer}" placeholder="e.g. Juan"></div>
+      <div class="field"><label>Product</label>
+        <select id="f-product" data-action="order-product-change">${productOptions(o.productId)}</select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Quantity</label><input id="f-qty" type="number" min="1" value="${o.qty}"></div>
+        <div class="field"><label>Platform</label>
+          <select id="f-platform">${PLATFORMS.map(pl=>`<option ${pl===o.platform?'selected':''}>${pl}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Unit Price (₱)</label><input id="f-unitprice" type="number" step="0.01" min="0" value="${o.unitPrice!==''?o.unitPrice:(selectedProduct?selectedProduct.sellingPrice:'')}"></div>
+        <div class="field"><label>Unit Cost (₱)</label><input id="f-unitcost" type="number" step="0.01" min="0" value="${o.unitCost!==''?o.unitCost:(selectedProduct?selectedProduct.baseCost:'')}"></div>
+      </div>
+      <div class="hint">Price and cost auto-fill from the product catalog — edit if this sale had a discount or special price.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn secondary" data-action="close-modal">Cancel</button>
+      <button class="btn" data-action="save-order" data-id="${existing?existing.id:''}" ${state.products.length===0?'disabled':''}>Save Sale</button>
+    </div>
+  `;
+}
+
+function modalExpenseForm(existing){
+  const e = existing || {date:today(),category:EXPENSE_CATS[0],description:'',amount:''};
+  return `
+    <div class="modal-head"><div class="modal-title">${existing?'Edit':'Add'} Expense</div><button class="modal-close" data-action="close-modal">×</button></div>
+    <div class="modal-body">
+      <div class="field-row">
+        <div class="field"><label>Date</label><input id="f-date" type="date" value="${e.date}"></div>
+        <div class="field"><label>Category</label><select id="f-category">${EXPENSE_CATS.map(c=>`<option ${c===e.category?'selected':''}>${c}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Description</label><input id="f-desc" value="${e.description}" placeholder="e.g. Bubble wrap, 3 rolls"></div>
+      <div class="field"><label>Amount (₱)</label><input id="f-amount" type="number" step="0.01" min="0" value="${e.amount}"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn secondary" data-action="close-modal">Cancel</button>
+      <button class="btn" data-action="save-expense" data-id="${existing?existing.id:''}">Save Expense</button>
+    </div>
+  `;
+}
+
+function modalAdjustmentForm(){
+  return `
+    <div class="modal-head"><div class="modal-title">Stock Adjustment</div><button class="modal-close" data-action="close-modal">×</button></div>
+    <div class="modal-body">
+      ${state.products.length===0?'<div class="hint">Add a product first in the Products tab.</div>':''}
+      <div class="field-row">
+        <div class="field"><label>Date</label><input id="f-date" type="date" value="${today()}"></div>
+        <div class="field"><label>Type</label><select id="f-type"><option value="in">Stock In (restock)</option><option value="out">Stock Out (loss/damage)</option></select></div>
+      </div>
+      <div class="field"><label>Product</label><select id="f-product">${productOptions()}</select></div>
+      <div class="field"><label>Quantity</label><input id="f-qty" type="number" min="1" value="1"></div>
+      <div class="field"><label>Note</label><input id="f-note" placeholder="e.g. New delivery from supplier"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn secondary" data-action="close-modal">Cancel</button>
+      <button class="btn" data-action="save-adjustment" ${state.products.length===0?'disabled':''}>Save Adjustment</button>
+    </div>
+  `;
+}
+
+/* ---------------- Actions ---------------- */
+async function handleAction(action, el){
+  const id = el.getAttribute('data-id');
+  switch(action){
+    case 'nav': {
+      state.tab = el.getAttribute('data-tab');
+      render();
+      if(state.tab === 'admin'){ loadAdminUsers(); }
+      break;
+    }
+    case 'logout': {
+      if(confirm('Log out from this account?')){ logout(); }
+      break;
+    }
+    case 'admin-refresh': loadAdminUsers(); break;
+    case 'admin-approve': {
+      await db.collection('users').doc(id).update({approved:true});
+      loadAdminUsers();
+      break;
+    }
+    case 'admin-revoke': {
+      if(confirm('Revoke access for this user? They will be logged out and need re-approval to get back in.')){
+        await db.collection('users').doc(id).update({approved:false});
+        loadAdminUsers();
+      }
+      break;
+    }
+    case 'filter-year': state.filterYear = Number(el.value); render(); break;
+    case 'filter-quarter': state.filterQuarter = el.value==='ALL'?'ALL':Number(el.value); render(); break;
+    case 'tax-rate': state.tax.rate = Number(el.value); saveKey('tax-settings', state.tax); render(); break;
+    case 'offering-pct': {
+      let pct = Number(el.value);
+      if(isNaN(pct)) pct = 10;
+      pct = Math.min(100, Math.max(0, pct));
+      state.offeringPct = pct/100;
+      saveKey('settings', {offeringPct: state.offeringPct});
+      render();
+      setTimeout(()=>{ const f=document.querySelector('[data-action="offering-pct"]'); if(f){ f.focus(); } },0);
+      break;
+    }
+    case 'exempt-input': {
+      const key = el.getAttribute('data-key');
+      state.tax.exempt[key] = Number(el.value)||0;
+      saveKey('tax-settings', state.tax);
+      render();
+      // restore focus after re-render
+      setTimeout(()=>{ const f=document.querySelector(`[data-key="${key}"]`); if(f){ f.focus(); } },0);
+      break;
+    }
+    case 'close-modal': closeModal(); break;
+
+    case 'add-product': openModal(modalProductForm(null)); break;
+    case 'edit-product': openModal(modalProductForm(state.products.find(p=>p.id===id))); break;
+    case 'delete-product': {
+      if(confirm('Delete this product? Related sales history will stay but show as (deleted product).')){
+        state.products = state.products.filter(p=>p.id!==id);
+        await saveKey('products', state.products); render();
+      }
+      break;
+    }
+    case 'save-product': {
+      const val = {
+        id: id || uid(),
+        name: document.getElementById('f-name').value.trim() || 'Unnamed product',
+        category: document.getElementById('f-category').value.trim(),
+        supplier: document.getElementById('f-supplier').value.trim(),
+        baseCost: Number(document.getElementById('f-cost').value)||0,
+        sellingPrice: Number(document.getElementById('f-price').value)||0,
+        openingStock: Number(document.getElementById('f-stock').value)||0,
+        lowStockAlert: Number(document.getElementById('f-lowalert').value)||0
+      };
+      if(id){ state.products = state.products.map(p=>p.id===id?val:p); }
+      else{ state.products.push(val); }
+      await saveKey('products', state.products);
+      closeModal(); render();
+      break;
+    }
+
+    case 'add-order': openModal(modalOrderForm(null)); break;
+    case 'edit-order': openModal(modalOrderForm(state.orders.find(o=>o.id===id))); break;
+    case 'order-product-change': {
+      const pid = document.getElementById('f-product').value;
+      const p = state.products.find(x=>x.id===pid);
+      if(p){ document.getElementById('f-unitprice').value = p.sellingPrice; document.getElementById('f-unitcost').value = p.baseCost; }
+      break;
+    }
+    case 'delete-order': {
+      if(confirm('Delete this sale? Stock will be restored.')){
+        state.orders = state.orders.filter(o=>o.id!==id);
+        await saveKey('orders', state.orders); render();
+      }
+      break;
+    }
+    case 'save-order': {
+      const val = {
+        id: id || uid(),
+        date: document.getElementById('f-date').value || today(),
+        orderNo: document.getElementById('f-orderno').value.trim(),
+        customer: document.getElementById('f-customer').value.trim(),
+        productId: document.getElementById('f-product').value,
+        qty: Number(document.getElementById('f-qty').value)||1,
+        unitPrice: Number(document.getElementById('f-unitprice').value)||0,
+        unitCost: Number(document.getElementById('f-unitcost').value)||0,
+        platform: document.getElementById('f-platform').value
+      };
+      if(id){ state.orders = state.orders.map(o=>o.id===id?val:o); }
+      else{ state.orders.push(val); }
+      await saveKey('orders', state.orders);
+      closeModal(); render();
+      break;
+    }
+
+    case 'add-expense': openModal(modalExpenseForm(null)); break;
+    case 'edit-expense': openModal(modalExpenseForm(state.expenses.find(e=>e.id===id))); break;
+    case 'delete-expense': {
+      if(confirm('Delete this expense?')){
+        state.expenses = state.expenses.filter(e=>e.id!==id);
+        await saveKey('expenses', state.expenses); render();
+      }
+      break;
+    }
+    case 'save-expense': {
+      const val = {
+        id: id || uid(),
+        date: document.getElementById('f-date').value || today(),
+        category: document.getElementById('f-category').value,
+        description: document.getElementById('f-desc').value.trim(),
+        amount: Number(document.getElementById('f-amount').value)||0
+      };
+      if(id){ state.expenses = state.expenses.map(e=>e.id===id?val:e); }
+      else{ state.expenses.push(val); }
+      await saveKey('expenses', state.expenses);
+      closeModal(); render();
+      break;
+    }
+
+    case 'add-adjustment': openModal(modalAdjustmentForm()); break;
+    case 'delete-adjustment': {
+      if(confirm('Delete this adjustment?')){
+        state.adjustments = state.adjustments.filter(a=>a.id!==id);
+        await saveKey('adjustments', state.adjustments); render();
+      }
+      break;
+    }
+    case 'save-adjustment': {
+      const val = {
+        id: uid(),
+        date: document.getElementById('f-date').value || today(),
+        type: document.getElementById('f-type').value,
+        productId: document.getElementById('f-product').value,
+        qty: Number(document.getElementById('f-qty').value)||1,
+        note: document.getElementById('f-note').value.trim()
+      };
+      state.adjustments.push(val);
+      await saveKey('adjustments', state.adjustments);
+      closeModal(); render();
+      break;
+    }
+
+    case 'reset-all': {
+      if(confirm('This will erase ALL your business data (products, sales, expenses, inventory, tax settings) from this device. Continue?')){
+        state.products=[]; state.orders=[]; state.expenses=[]; state.adjustments=[];
+        state.tax={rate:0.03, exempt:{}, vat8:false};
+        await Promise.all([
+          saveKey('products',[]), saveKey('orders',[]), saveKey('expenses',[]),
+          saveKey('adjustments',[]), saveKey('tax-settings', state.tax)
+        ]);
+        render();
+      }
+      break;
+    }
+  }
+}
+
+document.addEventListener('click', (e)=>{
+  const el = e.target.closest('[data-action]');
+  if(!el) return;
+  handleAction(el.getAttribute('data-action'), el);
+});
+document.addEventListener('change', (e)=>{
+  const el = e.target.closest('[data-action]');
+  if(!el) return;
+  const liveActions = ['filter-year','filter-quarter','tax-rate','exempt-input','order-product-change','offering-pct'];
+  if(liveActions.includes(el.getAttribute('data-action'))){
+    handleAction(el.getAttribute('data-action'), el);
+  }
+});
+
+/* ---------------- Init ---------------- */
+async function loadUserData(){
+  const [products, orders, expenses, adjustments, tax, settings] = await Promise.all([
+    loadKey('products', []),
+    loadKey('orders', []),
+    loadKey('expenses', []),
+    loadKey('adjustments', []),
+    loadKey('tax-settings', {rate:0.03, exempt:{}, vat8:false}),
+    loadKey('settings', {offeringPct:0.10})
+  ]);
+  state.products = products;
+  state.orders = orders;
+  state.expenses = expenses;
+  state.adjustments = adjustments;
+  state.tax = tax;
+  state.offeringPct = (settings && typeof settings.offeringPct==='number') ? settings.offeringPct : 0.10;
+  state.ready = true;
+  render();
+}
+
+async function init(){
+  updateSyncBanner();
+  if(!initFirebase()) return; // shows setup screen if config isn't filled in yet
+  auth.onAuthStateChanged(async (user)=>{
+    if(user){
+      currentUser = user;
+      state.ready = false;
+      checkApprovalAndLoad();
+    }else{
+      currentUser = null;
+      state.ready = false;
+      renderAuthScreen();
+    }
+  });
+}
+init();
+</script>
+</body>
+</html>
