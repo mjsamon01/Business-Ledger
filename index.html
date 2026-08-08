@@ -9,6 +9,7 @@
 <!-- Firebase (free Spark plan) — database + built-in offline support -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.14.1/firebase-app-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.14.1/firebase-firestore-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.14.1/firebase-auth-compat.min.js"></script>
 <style>
   .sync-banner{
     position:fixed; top:0; left:0; right:0; z-index:100;
@@ -23,6 +24,41 @@
   .setup-box{ max-width:480px; background:#1E332B; border-radius:10px; padding:28px; line-height:1.7; font-size:13.5px; }
   .setup-box h2{ font-family:'Space Grotesk',sans-serif; color:#C79A3E; margin-top:0; }
   .setup-box code{ background:#0d1614; padding:2px 6px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:12px; }
+
+  /* Auth screen */
+  .auth-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+    font-family:'Inter',sans-serif; background:#16241F;
+  }
+  .auth-box{
+    max-width:380px; width:100%; background:#F3EEE0; border-radius:12px; padding:32px 28px;
+  }
+  .auth-brand{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; color:#1C2B26; margin-bottom:2px; }
+  .auth-sub{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:#C79A3E; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:22px; }
+  .auth-field{ margin-bottom:14px; }
+  .auth-field label{ display:block; font-size:11px; font-weight:600; color:#6B6355; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:5px; }
+  .auth-field input{ width:100%; padding:10px 12px; border:1px solid #D3CDB4; border-radius:6px; font-family:'Inter',sans-serif; font-size:14px; background:#FBFAF4; }
+  .auth-btn{
+    width:100%; padding:11px; border-radius:6px; border:1px solid #1C2B26; background:#1C2B26; color:#FBFAF4;
+    font-weight:600; font-size:14px; cursor:pointer; font-family:'Inter',sans-serif; margin-top:6px;
+  }
+  .auth-btn:hover{ background:#0d1614; }
+  .auth-toggle{ text-align:center; margin-top:16px; font-size:12.5px; color:#6B6355; }
+  .auth-toggle a{ color:#C79A3E; font-weight:600; cursor:pointer; text-decoration:none; }
+  .auth-error{ background:#FBEFEA; border:1px solid #B23A2E; color:#7A2A20; border-radius:6px; padding:9px 12px; font-size:12.5px; margin-bottom:14px; }
+  .auth-forgot{ text-align:right; margin-top:-8px; margin-bottom:14px; }
+  .auth-forgot a{ font-size:11.5px; color:#6B6355; cursor:pointer; text-decoration:underline; }
+  .user-bar{
+    padding:12px 22px; border-top:1px solid rgba(255,255,255,0.08); margin-top:8px;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .user-email{ font-size:11px; color:rgba(255,255,255,0.55); font-family:'IBM Plex Mono',monospace; word-break:break-all; }
+  .logout-btn{
+    background:none;border:1px solid rgba(255,255,255,0.18);color:rgba(255,255,255,0.7);
+    font-size:11px;padding:7px 10px;border-radius:6px;cursor:pointer;width:100%;
+    font-family:'Inter',sans-serif;
+  }
+  .logout-btn:hover{ border-color:#C79A3E; color:#C79A3E; }
   :root{
     --cover:#16241F;
     --cover-2:#1E332B;
@@ -356,6 +392,8 @@ const firebaseConfig = {
 };
 
 let db = null;
+let auth = null;
+let currentUser = null;
 let firebaseReady = false;
 
 function isConfigFilled(){
@@ -377,6 +415,7 @@ function initFirebase(){
   try{
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    auth = firebase.auth();
     // Enables offline reads/writes: cached locally, auto-syncs when back online.
     db.enablePersistence({synchronizeTabs:true}).catch(err=>{
       console.warn('Offline persistence not enabled:', err.code);
@@ -399,12 +438,78 @@ function updateSyncBanner(){
 window.addEventListener('online', updateSyncBanner);
 window.addEventListener('offline', updateSyncBanner);
 
-/* ---------------- Storage helpers (Firestore-backed, offline-capable) ---------------- */
+/* ---------------- Auth screen ---------------- */
+let authMode = 'login'; // 'login' | 'signup'
+
+function renderAuthScreen(errorMsg){
+  document.getElementById('root').innerHTML = `
+    <div class="auth-screen"><div class="auth-box">
+      <div class="auth-brand">Ledger</div>
+      <div class="auth-sub">Business Tracker</div>
+      ${errorMsg?`<div class="auth-error">${errorMsg}</div>`:''}
+      <div class="auth-field"><label>Email</label><input id="auth-email" type="email" placeholder="you@example.com"></div>
+      <div class="auth-field"><label>Password</label><input id="auth-password" type="password" placeholder="••••••••"></div>
+      ${authMode==='login'?`<div class="auth-forgot"><a data-authaction="forgot">Forgot password?</a></div>`:''}
+      <button class="auth-btn" data-authaction="submit">${authMode==='login'?'Log In':'Create Account'}</button>
+      <div class="auth-toggle">
+        ${authMode==='login'
+          ? `Wala pang account? <a data-authaction="toggle">Sign up</a>`
+          : `May account ka na? <a data-authaction="toggle">Log in</a>`}
+      </div>
+    </div></div>
+  `;
+  document.querySelectorAll('[data-authaction]').forEach(el=>{
+    el.addEventListener('click', handleAuthAction);
+  });
+}
+
+async function handleAuthAction(e){
+  const action = e.currentTarget.getAttribute('data-authaction');
+  if(action==='toggle'){ authMode = authMode==='login' ? 'signup' : 'login'; renderAuthScreen(); return; }
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if(action==='forgot'){
+    if(!email){ renderAuthScreen('Type your email first, then tap "Forgot password?" again.'); return; }
+    try{ await auth.sendPasswordResetEmail(email); renderAuthScreen('Password reset email sent — check your inbox.'); }
+    catch(err){ renderAuthScreen(friendlyAuthError(err)); }
+    return;
+  }
+  if(action==='submit'){
+    if(!email || !password){ renderAuthScreen('Please fill in both email and password.'); return; }
+    try{
+      if(authMode==='login'){ await auth.signInWithEmailAndPassword(email, password); }
+      else{ await auth.createUserWithEmailAndPassword(email, password); }
+      // onAuthStateChanged will take it from here
+    }catch(err){ renderAuthScreen(friendlyAuthError(err)); }
+  }
+}
+
+function friendlyAuthError(err){
+  const map = {
+    'auth/invalid-email':'Invalid email address.',
+    'auth/user-not-found':'No account found with that email.',
+    'auth/wrong-password':'Incorrect password.',
+    'auth/invalid-credential':'Incorrect email or password.',
+    'auth/email-already-in-use':'That email already has an account — try logging in instead.',
+    'auth/weak-password':'Password should be at least 6 characters.',
+  };
+  return map[err.code] || (err.message || 'Something went wrong. Please try again.');
+}
+
+async function logout(){
+  await auth.signOut();
+}
+
+/* ---------------- Storage helpers (Firestore-backed, offline-capable, per-user) ---------------- */
 const DOC_COLLECTION = 'ledger-data'; // one document per data key, e.g. products, orders...
+
+function userDoc(key){
+  return db.collection('users').doc(currentUser.uid).collection(DOC_COLLECTION).doc(key);
+}
 
 async function loadKey(key, fallback){
   try{
-    const snap = await db.collection(DOC_COLLECTION).doc(key).get();
+    const snap = await userDoc(key).get();
     if(snap.exists && snap.data() && typeof snap.data().value === 'string'){
       return JSON.parse(snap.data().value);
     }
@@ -413,7 +518,7 @@ async function loadKey(key, fallback){
 }
 async function saveKey(key, value){
   try{
-    await db.collection(DOC_COLLECTION).doc(key).set({
+    await userDoc(key).set({
       value: JSON.stringify(value),
       updatedAt: Date.now()
     });
@@ -523,6 +628,10 @@ function renderSidebar(lowCount){
       ${navItem('expenses','Expenses','#B23A2E')}
       ${navItem('inventory','Inventory','#3E6B8A', lowCount>0?lowCount:0)}
       ${navItem('tax','Quarterly Tax','#5B4B8A')}
+    </div>
+    <div class="user-bar">
+      <div class="user-email">${currentUser ? currentUser.email : ''}</div>
+      <button class="logout-btn" data-action="logout">Log out</button>
     </div>
     <div class="sidebar-foot">
       <button class="reset-btn" data-action="reset-all">Reset all data</button>
@@ -974,6 +1083,10 @@ async function handleAction(action, el){
   const id = el.getAttribute('data-id');
   switch(action){
     case 'nav': state.tab = el.getAttribute('data-tab'); render(); break;
+    case 'logout': {
+      if(confirm('Log out from this account?')){ logout(); }
+      break;
+    }
     case 'filter-year': state.filterYear = Number(el.value); render(); break;
     case 'filter-quarter': state.filterQuarter = el.value==='ALL'?'ALL':Number(el.value); render(); break;
     case 'tax-rate': state.tax.rate = Number(el.value); saveKey('tax-settings', state.tax); render(); break;
@@ -1136,9 +1249,7 @@ document.addEventListener('change', (e)=>{
 });
 
 /* ---------------- Init ---------------- */
-async function init(){
-  updateSyncBanner();
-  if(!initFirebase()) return; // shows setup screen if config isn't filled in yet
+async function loadUserData(){
   const [products, orders, expenses, adjustments, tax, settings] = await Promise.all([
     loadKey('products', []),
     loadKey('orders', []),
@@ -1155,6 +1266,22 @@ async function init(){
   state.offeringPct = (settings && typeof settings.offeringPct==='number') ? settings.offeringPct : 0.10;
   state.ready = true;
   render();
+}
+
+async function init(){
+  updateSyncBanner();
+  if(!initFirebase()) return; // shows setup screen if config isn't filled in yet
+  auth.onAuthStateChanged(async (user)=>{
+    if(user){
+      currentUser = user;
+      state.ready = false;
+      loadUserData();
+    }else{
+      currentUser = null;
+      state.ready = false;
+      renderAuthScreen();
+    }
+  });
 }
 init();
 </script>
