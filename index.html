@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ledger — Business Tracker</title>
+<link rel="icon" type="image/png" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#16241F">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <!-- Firebase (free Spark plan) — database + built-in offline support -->
@@ -473,8 +477,8 @@ function renderAuthScreen(errorMsg){
       <button class="auth-btn" data-authaction="submit">${authMode==='login'?'Log In':'Create Account'}</button>
       <div class="auth-toggle">
         ${authMode==='login'
-          ? `Wala pang account? <a data-authaction="toggle">Sign up</a>`
-          : `May account ka na? <a data-authaction="toggle">Log in</a>`}
+          ? `Don't have an account yet? <a data-authaction="toggle">Sign up</a>`
+          : `Already have an account? <a data-authaction="toggle">Log in</a>`}
       </div>
     </div></div>
   `;
@@ -529,7 +533,7 @@ function renderPendingScreen(){
     <div class="pending-screen"><div class="pending-box">
       <div class="icon">⏳</div>
       <h2>Waiting for approval</h2>
-      <p>Nakita na namin ang sign-up mo (<strong>${currentUser.email}</strong>), pero kailangan pa itong i-approve ng may-ari ng ledger na ito bago ka makapasok. Sabihan mo lang siya na nag-sign up ka na.</p>
+      <p>We've received your sign-up (<strong>${currentUser.email}</strong>), but this ledger's owner still needs to approve your account before you can get in. Let them know you've signed up.</p>
       <button class="auth-btn" data-action="logout" style="max-width:220px;margin:0 auto;">Log out</button>
     </div></div>
   `;
@@ -602,6 +606,7 @@ let state = {
   filterYear:new Date().getFullYear(),
   filterQuarter:'ALL',
   offeringPct:0.10,
+  savingsPct:0.20,
   isAdmin:false
 };
 
@@ -729,6 +734,7 @@ function renderDashboard(lowStock){
   const totalExpenses = exps.reduce((s,e)=>s+Number(e.amount),0);
   const netProfit = grossProfit-totalExpenses;
   const offering = Math.max(0,netProfit) * Number(state.offeringPct);
+  const savings = Math.max(0,netProfit) * Number(state.savingsPct);
 
   const quarters=[1,2,3,4];
   const qData = quarters.map(qq=>{
@@ -744,7 +750,7 @@ function renderDashboard(lowStock){
     <div class="page-header">
       <div>
         <div class="page-title">Dashboard</div>
-        <div class="page-desc">Kita, gastos, at kalusugan ng negosyo sa isang tingin.</div>
+        <div class="page-desc">Income, expenses, and business health at a glance.</div>
       </div>
       <div class="filterbar">
         <div class="field"><label>Year</label>
@@ -777,8 +783,15 @@ function renderDashboard(lowStock){
         </div>
         <div class="card-value money" style="color:var(--gold-dark)">${peso(offering)}</div>
       </div>
+      <div class="card" style="border-color:#3E6B8A">
+        <div class="card-label">Savings
+          <input type="number" min="0" max="100" step="1" value="${(state.savingsPct*100).toFixed(0)}" data-action="savings-pct"
+            style="width:44px; padding:1px 4px; font-size:11px; margin-left:4px;">%
+        </div>
+        <div class="card-value money" style="color:#3E6B8A">${peso(savings)}</div>
+      </div>
     </div>
-    <div class="section-note" style="margin-top:-14px; margin-bottom:24px;">Offering is computed as <strong>${(state.offeringPct*100).toFixed(0)}% of Net Profit</strong> — actual income only, after all cost of goods and expenses are deducted. Edit the % above anytime.</div>
+    <div class="section-note" style="margin-top:-14px; margin-bottom:24px;">Offering is computed as <strong>${(state.offeringPct*100).toFixed(0)}% of Net Profit</strong>, and Savings as <strong>${(state.savingsPct*100).toFixed(0)}% of Net Profit</strong> — actual income only, after all cost of goods and expenses are deducted. Edit either % anytime.</div>
 
     <div class="chart">
       <div class="chart-title">Sales vs. Expenses by Quarter — ${y}</div>
@@ -816,7 +829,7 @@ function renderSales(){
   const rows=[...state.orders].sort((a,b)=>b.date.localeCompare(a.date));
   return `
     <div class="page-header">
-      <div><div class="page-title">Sales / Orders</div><div class="page-desc">Bawat benta dito, automatic na nababawas sa stock.</div></div>
+      <div><div class="page-title">Sales / Orders</div><div class="page-desc">Every sale here automatically deducts from stock.</div></div>
       <button class="btn" data-action="add-order">+ Add Sale</button>
     </div>
     <div class="table-wrap">
@@ -852,7 +865,7 @@ function renderProducts(){
   const rows=[...state.products].sort((a,b)=>a.name.localeCompare(b.name));
   return `
     <div class="page-header">
-      <div><div class="page-title">Products / Offerings</div><div class="page-desc">Ito ang mga paninda o serbisyo mong inaalok.</div></div>
+      <div><div class="page-title">Products / Offerings</div><div class="page-desc">The products or services you offer.</div></div>
       <button class="btn" data-action="add-product">+ Add Product</button>
     </div>
     <div class="table-wrap">
@@ -888,7 +901,7 @@ function renderExpenses(){
   const total = rows.reduce((s,e)=>s+Number(e.amount),0);
   return `
     <div class="page-header">
-      <div><div class="page-title">Expenses</div><div class="page-desc">Lahat ng lumalabas na pera para patakbuhin ang negosyo.</div></div>
+      <div><div class="page-title">Expenses</div><div class="page-desc">All the money going out to run the business.</div></div>
       <button class="btn" data-action="add-expense">+ Add Expense</button>
     </div>
     <div class="cards" style="grid-template-columns:220px;">
@@ -919,7 +932,7 @@ function renderInventory(lowStock){
   const adj=[...state.adjustments].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15);
   return `
     <div class="page-header">
-      <div><div class="page-title">Inventory</div><div class="page-desc">Kasalukuyang stock at manual na pag-adjust (restock, damage, loss).</div></div>
+      <div><div class="page-title">Inventory</div><div class="page-desc">Current stock and manual adjustments (restock, damage, loss).</div></div>
       <button class="btn" data-action="add-adjustment">+ Stock Adjustment</button>
     </div>
     ${lowStock.length>0?`<div class="banner">⚠ Low stock: ${lowStock.map(p=>p.name).join(', ')}</div>`:''}
@@ -991,7 +1004,7 @@ function renderTax(){
 
   return `
     <div class="page-header">
-      <div><div class="page-title">Quarterly Tax Summary</div><div class="page-desc">Percentage Tax (2551Q) estimate based sa iyong logged sales.</div></div>
+      <div><div class="page-title">Quarterly Tax Summary</div><div class="page-desc">Percentage Tax (2551Q) estimate based on your logged sales.</div></div>
       <div class="filterbar">
         <div class="field"><label>Year</label>
           <select data-action="filter-year">${years.map(yy=>`<option value="${yy}" ${yy===y?'selected':''}>${yy}</option>`).join('')}</select>
@@ -1044,7 +1057,7 @@ async function loadAdminUsers(){
 function renderAdmin(){
   return `
     <div class="page-header">
-      <div><div class="page-title">Admin — Approve Users</div><div class="page-desc">Ikaw lang ang nakakakita nito. I-approve ang mga bagong nag-sign up bago sila makapasok.</div></div>
+      <div><div class="page-title">Admin — Approve Users</div><div class="page-desc">Only you can see this. Approve new sign-ups before they can get in.</div></div>
       <button class="btn secondary" data-action="admin-refresh">↻ Refresh</button>
     </div>
     <div class="table-wrap">
@@ -1071,7 +1084,7 @@ function renderAdmin(){
         </tbody>
       </table>
     </div>
-    <div class="section-note">Bagong nag-sign up ay hindi makakapasok hangga't hindi mo pina-"Approve" dito. Pwede mo ring "Revoke" ang access ng sinuman anumang oras.</div>
+    <div class="section-note">New sign-ups can't get in until you tap "Approve" here. You can also "Revoke" anyone's access at any time.</div>
   `;
 }
 
@@ -1095,7 +1108,7 @@ async function startQRScanner(){
     requestAnimationFrame(qrScanTick);
   }catch(e){
     console.error('camera error', e);
-    if(statusEl){ statusEl.textContent = 'Hindi ma-access ang camera — pumili na lang sa dropdown sa itaas.'; statusEl.style.color = 'var(--brick)'; }
+    if(statusEl){ statusEl.textContent = 'Could not access the camera — please choose from the dropdown above instead.'; statusEl.style.color = 'var(--brick)'; }
   }
 }
 
@@ -1141,7 +1154,7 @@ function onQRDetected(data){
   }
   if(statusEl){
     if(product){ statusEl.textContent = `✓ Na-scan: ${product.name}`; statusEl.style.color = 'var(--forest)'; }
-    else{ statusEl.textContent = `Na-scan pero walang tumugmang produkto — pumili na lang sa dropdown.`; statusEl.style.color = 'var(--brick)'; }
+    else{ statusEl.textContent = `Scanned, but no matching product found — please choose from the dropdown instead.`; statusEl.style.color = 'var(--brick)'; }
   }
 }
 
@@ -1207,11 +1220,11 @@ function modalOrderForm(existing){
           <video id="qr-video" style="width:100%; border-radius:8px; background:#000; display:block;" playsinline muted></video>
           <canvas id="qr-canvas" style="display:none;"></canvas>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; gap:8px;">
-            <span id="qr-status" style="font-size:11.5px;color:var(--muted);">Itutok sa QR code ng produkto…</span>
+            <span id="qr-status" style="font-size:11.5px;color:var(--muted);">Point the camera at the product's QR code…</span>
             <button type="button" class="btn small danger" data-action="stop-qr-scan">Stop</button>
           </div>
         </div>
-        <div class="hint">Pwede mo ring i-scan ang QR ng produkto (kung mayroon), o piliin lang direkta sa dropdown sa itaas.</div>
+        <div class="hint">You can scan the product's QR code (if it has one), or just pick it directly from the dropdown above.</div>
       </div>
       <div class="field-row">
         <div class="field"><label>Quantity</label><input id="f-qty" type="number" min="1" value="${o.qty}"></div>
@@ -1260,7 +1273,7 @@ function modalQRForm(product){
       <div class="qr-wrap">
         <img src="${qrUrl}" width="220" height="220" alt="QR code for ${product.name}">
         <div class="qr-code-text">${product.id}</div>
-        <div class="hint" style="text-align:center;">I-print o i-save ito, idikit sa packaging. Kapag naka-scan feature na tayo sa hinaharap, ito ang mag-a-auto-fill ng product sa Sales form.</div>
+        <div class="hint" style="text-align:center;">Print or save this and stick it on the packaging. Once scanning is set up, this will auto-fill the product on the Sales form.</div>
         <a class="btn small" href="${qrUrl}" download="QR-${product.name.replace(/[^a-z0-9]/gi,'-')}.png" target="_blank" rel="noopener">⬇ Download QR</a>
       </div>
     </div>
@@ -1325,9 +1338,19 @@ async function handleAction(action, el){
       if(isNaN(pct)) pct = 10;
       pct = Math.min(100, Math.max(0, pct));
       state.offeringPct = pct/100;
-      saveKey('settings', {offeringPct: state.offeringPct});
+      saveKey('settings', {offeringPct: state.offeringPct, savingsPct: state.savingsPct});
       render();
       setTimeout(()=>{ const f=document.querySelector('[data-action="offering-pct"]'); if(f){ f.focus(); } },0);
+      break;
+    }
+    case 'savings-pct': {
+      let pct = Number(el.value);
+      if(isNaN(pct)) pct = 20;
+      pct = Math.min(100, Math.max(0, pct));
+      state.savingsPct = pct/100;
+      saveKey('settings', {offeringPct: state.offeringPct, savingsPct: state.savingsPct});
+      render();
+      setTimeout(()=>{ const f=document.querySelector('[data-action="savings-pct"]'); if(f){ f.focus(); } },0);
       break;
     }
     case 'exempt-input': {
@@ -1475,7 +1498,7 @@ document.addEventListener('click', (e)=>{
 document.addEventListener('change', (e)=>{
   const el = e.target.closest('[data-action]');
   if(!el) return;
-  const liveActions = ['filter-year','filter-quarter','tax-rate','exempt-input','order-product-change','offering-pct'];
+  const liveActions = ['filter-year','filter-quarter','tax-rate','exempt-input','order-product-change','offering-pct','savings-pct'];
   if(liveActions.includes(el.getAttribute('data-action'))){
     handleAction(el.getAttribute('data-action'), el);
   }
@@ -1489,7 +1512,7 @@ async function loadUserData(){
     loadKey('expenses', []),
     loadKey('adjustments', []),
     loadKey('tax-settings', {rate:0.03, exempt:{}, vat8:false}),
-    loadKey('settings', {offeringPct:0.10})
+    loadKey('settings', {offeringPct:0.10, savingsPct:0.20})
   ]);
   state.products = products;
   state.orders = orders;
@@ -1497,6 +1520,7 @@ async function loadUserData(){
   state.adjustments = adjustments;
   state.tax = tax;
   state.offeringPct = (settings && typeof settings.offeringPct==='number') ? settings.offeringPct : 0.10;
+  state.savingsPct = (settings && typeof settings.savingsPct==='number') ? settings.savingsPct : 0.20;
   state.ready = true;
   render();
 }
